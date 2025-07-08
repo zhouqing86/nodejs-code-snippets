@@ -17,7 +17,8 @@ function pick<T extends object>(object: T | null | undefined, paths: string | st
 
     // Handle paths with wildcards
     if (keys.includes('[]')) {
-      processWildcardPath(object, keys, [], result);
+      const rootKey = keys[0];
+      result[rootKey] = processWildcardPath(object, keys, 0);
     } else {
       // Standard pick behavior
       let current: any = object;
@@ -35,47 +36,35 @@ function pick<T extends object>(object: T | null | undefined, paths: string | st
   return result;
 }
 
-function processWildcardPath(
-  current: any,
-  keys: string[],
-  indices: number[],
-  result: ResultObject,
-  keyPrefix: string = ''
-): void {
-  if (current == null) return;
-
-  const wildcardIndex = keys.indexOf('[]');
-  if (wildcardIndex === -1) {
-    // No more wildcards, traverse remaining keys
-    let value = current;
-    for (const key of keys) {
-      if (value == null) return;
-      value = value[key];
-    }
-    if (value !== undefined) {
-      // Generate key with indices (e.g., c_0_1)
-      const lastKey = keys[keys.length - 1];
-      result[`${lastKey}${keyPrefix}_${indices.join('_')}`] = value;
-    }
-    return;
+function processWildcardPath(current: any, keys: string[], index: number): any {
+  if (current == null || index >= keys.length) {
+    return undefined;
   }
 
-  // Traverse to the wildcard
-  const prefixKeys = keys.slice(0, wildcardIndex);
-  let value = current;
-  for (const key of prefixKeys) {
-    if (value == null) return;
-    value = value[key];
+  const key = keys[index];
+  if (key !== '[]') {
+    // Non-wildcard key
+    const nextValue = current[key];
+    if (index === keys.length - 1) {
+      // Last key, return value if defined
+      return nextValue !== undefined ? { [key]: nextValue } : undefined;
+    }
+    // Recurse to next key
+    const result = processWildcardPath(nextValue, keys, index + 1);
+    return result !== undefined ? { [key]: result } : undefined;
   }
 
-  // Ensure value is an array
-  if (!Array.isArray(value)) return;
+  // Wildcard key
+  if (!Array.isArray(current)) {
+    return undefined;
+  }
 
   // Process each array element
-  const suffixKeys = keys.slice(wildcardIndex + 1);
-  value.forEach((item: any, index: number) => {
-    processWildcardPath(item, suffixKeys, [...indices, index], result, keyPrefix);
-  });
+  const result = current
+    .map((item: any) => processWildcardPath(item, keys, index + 1))
+    .filter((item: any) => item !== undefined);
+
+  return result.length > 0 ? result : undefined;
 }
 
 export default pick;
