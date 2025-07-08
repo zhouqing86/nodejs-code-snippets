@@ -9,9 +9,8 @@ function get<T extends object, D = any>(
 
   // Handle wildcard paths
   if (keys.includes('[]')) {
-    const result: any[] = [];
-    processWildcardGet(object, keys, result);
-    return result.length > 0 ? result : (defaultValue !== undefined ? defaultValue : []);
+    const result = processWildcardGet(object, keys, 0);
+    return result !== undefined && result.length > 0 ? result : (defaultValue !== undefined ? defaultValue : []);
   }
 
   // Standard get behavior
@@ -23,39 +22,33 @@ function get<T extends object, D = any>(
   return current !== undefined ? current : defaultValue;
 }
 
-function processWildcardGet(current: any, keys: string[], result: any[]): void {
-  if (current == null) return;
-
-  const wildcardIndex = keys.indexOf('[]');
-  if (wildcardIndex === -1) {
-    // No more wildcards, traverse remaining keys
-    let value = current;
-    for (const key of keys) {
-      if (value == null) return;
-      value = value[key];
-    }
-    if (value !== undefined) {
-      result.push(value);
-    }
-    return;
+function processWildcardGet(current: any, keys: string[], index: number): any[] | undefined {
+  if (current == null || index >= keys.length) {
+    return undefined;
   }
 
-  // Traverse to the wildcard
-  const prefixKeys = keys.slice(0, wildcardIndex);
-  let value = current;
-  for (const key of prefixKeys) {
-    if (value == null) return;
-    value = value[key];
+  const key = keys[index];
+  if (key !== '[]') {
+    // Non-wildcard key
+    if (index === keys.length - 1) {
+      // Last key, return value if defined
+      return current[key] !== undefined ? [current[key]] : undefined;
+    }
+    // Recurse to next key
+    return processWildcardGet(current[key], keys, index + 1);
   }
 
-  // Ensure value is an array
-  if (!Array.isArray(value)) return;
+  // Wildcard key
+  if (!Array.isArray(current)) {
+    return undefined;
+  }
 
   // Process each array element
-  const suffixKeys = keys.slice(wildcardIndex + 1);
-  value.forEach((item: any) => {
-    processWildcardGet(item, suffixKeys, result);
-  });
+  const result = current
+    .map((item: any) => processWildcardGet(item, keys, index + 1))
+    .filter((item: any) => item !== undefined);
+
+  return result.length > 0 ? result : undefined;
 }
 
 export default get;
