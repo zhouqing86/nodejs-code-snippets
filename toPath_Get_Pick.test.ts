@@ -30,31 +30,61 @@ const objectWithMissing = {
 };
 
 describe('toPath', () => {
-  test('should convert string path to array of keys', () => {
-    expect(toPath('a.b.c')).toEqual(['a', 'b', 'c']);
-    expect(toPath('a[0].b')).toEqual(['a', '0', 'b']);
+  test('should handle nested wildcard path', () => {
+    expect(superToPath('a.[].b.[].c')).toEqual(['a', '[]', 'b', '[]', 'c']);
   });
 
   test('should handle single wildcard path', () => {
-    expect(toPath('a.[].b.c')).toEqual(['a', '[]', 'b', 'c']);
+    expect(superToPath('a.[].b')).toEqual(['a', '[]', 'b']);
   });
 
-  test('should handle nested wildcard path', () => {
-    expect(toPath('a.[].b.[].c')).toEqual(['a', '[]', 'b', '[]', 'c']);
+  test('should handle standard path without wildcards', () => {
+    expect(superToPath('a.b.c')).toEqual(['a', 'b', 'c']);
+  });
+
+  test('should handle complex segments with bracket notation', () => {
+    expect(superToPath('a.b[0].[].c')).toEqual(['a', 'b', '0', '[]', 'c']);
+    expect(superToPath('a["b.c"].[].d')).toEqual(['a', 'b.c', '[]', 'd']);
+    expect(superToPath('a.["b"].[].["c"]')).toEqual(['a', '[]', 'b', '[]', 'c']);
   });
 
   test('should handle array input', () => {
-    expect(toPath(['a', 'b', 'c'])).toEqual(['a', 'b', 'c']);
+    expect(superToPath(['a', 'b', 'c'])).toEqual(['a', 'b', 'c']);
+    expect(superToPath(['a', '', '', 'c'])).toEqual(['a', '..c']);
   });
 
   test('should handle empty or null input', () => {
-    expect(toPath('')).toEqual([]);
-    expect(toPath(null as any)).toEqual([]);
-    expect(toPath(undefined as any)).toEqual([]);
+    expect(superToPath('')).toEqual([]);
+    expect(superToPath(null as any)).toEqual([]);
+    expect(superToPath(undefined as any)).toEqual([]);
   });
 
-  test('should handle bracket notation with quotes', () => {
-    expect(toPath('a["b.c"].d')).toEqual(['a', 'b.c', 'd']);
+  test('should handle consecutive wildcards', () => {
+    expect(superToPath('a.[].[].c')).toEqual(['a', '[]', '[]', 'c']);
+  });
+
+  test('should handle single segment', () => {
+    expect(superToPath('a')).toEqual(['a']);
+  });
+
+  test('should handle trailing or leading wildcards', () => {
+    expect(superToPath('.[].a')).toEqual(['.', '[]', 'a']);
+    expect(superToPath('a.[].')).toEqual(['a', '[]', '.']);
+  });
+
+  test('should handle empty segments', () => {
+    expect(superToPath('.[]..[].')).toEqual(['.', '[]', '.', '[]', '.']);
+  });
+
+  test('should handle segments with empty strings via combineEmpty', () => {
+    expect(superToPath('a..[].c')).toEqual(['a', '..c', '[]', 'c']);
+    expect(superToPath('a..c.[].d')).toEqual(['a', '..c', '[]', 'd']);
+    expect(superToPath('..[].c')).toEqual(['.c', '[]', 'c']);
+  });
+
+  test('should handle complex quoted paths with empty segments', () => {
+    expect(superToPath('a.[""].[].["c"]')).toEqual(['a', '[]', 'c']);
+    expect(superToPath('a.[""].[].b.[""]')).toEqual(['a', '[]', 'b', '.']);
   });
 });
 
