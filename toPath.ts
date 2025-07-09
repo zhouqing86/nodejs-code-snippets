@@ -1,38 +1,43 @@
-function toPath(value: string | string[]): string[] {
-  // If value is already an array, return a copy
+import { toPath } from 'lodash';
+import combineEmpty from './combineEmpty';
+
+/**
+ * Splits a path string on '.[].', processes each segment with toPath and combineEmpty,
+ * and concatenates results with '[]' separators.
+ * @param value The input path string (e.g., 'a.[].b.[].c').
+ * @returns Array of strings with segments processed by toPath and combineEmpty, joined with '[]'.
+ */
+function superToPath(value: string | string[]): string[] {
+  // Handle array input by passing to toPath and combineEmpty
   if (Array.isArray(value)) {
-    return value.slice();
-  }
-  // Parse string path
-  return stringToPath(value);
-}
-
-function stringToPath(string: string): string[] {
-  const cache: { [key: string]: string[] } = {};
-  if (cache[string]) {
-    return cache[string];
+    return combineEmpty(toPath(value));
   }
 
+  // Handle null or undefined
+  if (value == null) {
+    return [];
+  }
+
+  // Split on '.[].' delimiter
+  const segments = value.split('.[].');
   const result: string[] = [];
-  if (string == null) {
-    return result;
-  }
 
-  // Regex to match property names, '[]', and bracket notation
-  const rePropName = /[^.[\]]+|\[\]|\[(?:(-?\d+(?:\.\d+)?)|(["'])((?:(?!\2)[^\\]|\\.)*?)\2)\]|(?=(?:\.|\[\])(?:\.|\[\]|$))/g;
-
-  string = string.replace(/\\(\\)?/g, '$1');
-
-  let match: RegExpExecArray | null;
-  while ((match = rePropName.exec(string))) {
-    const key = match[0] === '[]' ? '[]' : (match[1] || match[3] || '');
-    if (key) {
-      result.push(key);
+  // Process each segment with toPath and combineEmpty, concatenate with '[]'
+  segments.forEach((segment, index) => {
+    if (segment) {
+      // Process non-empty segment with toPath and combineEmpty
+      result.push(...combineEmpty(toPath(segment)));
+    } else {
+      // Empty segment, treat as [""]
+      result.push(...combineEmpty(['']));
     }
-  }
+    // Add '[]' after each segment except the last
+    if (index < segments.length - 1) {
+      result.push('[]');
+    }
+  });
 
-  cache[string] = result;
   return result;
 }
 
-export default toPath;
+export default superToPath;
