@@ -67,4 +67,93 @@ function processWildcardPath(current: any, keys: string[], index: number): any {
   return result.length > 0 ? result : undefined;
 }
 
+function superPick<T extends object>(object: T | null | undefined, paths: string | string[]): ResultObject {
+  if (object == null) {
+    return {};
+  }
+
+  // Convert paths to array of path objects
+  const props = Array.isArray(paths) ? paths : [paths];
+  const pathArray: PathObject[] = props.map((p) => ({
+    path: superToPath(p),
+  }));
+
+  const result: ResultObject = {};
+
+  // Iterate over first-level properties of the object
+  for (const key in object) {
+    if (Object.prototype.hasOwnProperty.call(object, key)) {
+      // Check if key matches any path's first segment or wildcard for arrays
+      if (
+        pathArray.some((p) => p.path[0] === key || (p.path[0] === '[]' && Array.isArray(object[key])))
+      ) {
+        // Match found: recursively process paths
+        result[key] = processPaths(object[key], pathArray, 0);
+      } else {
+        // No match: set undefined
+        result[key] = undefined;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Recursively processes paths for a given object level, handling wildcards and matching paths.
+ * @param current The current object or array to process.
+ * @param pathArray Array of path objects containing superToPath results.
+ * @param index The current index in the path arrays.
+ * @returns The processed result or undefined if no match.
+ */
+function processPaths(current: any, pathArray: PathObject[], index: number): any {
+  if (current == null) {
+    return undefined;
+  }
+
+  // Filter paths that are still valid at this level
+  const validPaths = pathArray.filter((p) => p.path.length > index);
+  if (validPaths.length === 0) {
+    return undefined;
+  }
+
+  // Handle wildcard paths
+  const wildcardPaths = validPaths.filter((p) => p.path[index] === '[]');
+  if (wildcardPaths.length > 0 && Array.isArray(current)) {
+    // Process each array element for wildcard paths
+    const result = current
+      .map((item: any) => processPaths(item, wildcardPaths, index + 1))
+      .filter((item: any) => item !== undefined);
+    return result.length > 0 ? result : undefined;
+  }
+
+  // Handle non-wildcard paths
+  const matchingPaths = validPaths.filter(
+    (p) => p.path[index] !== '[]' && (current[p.path[index]] !== undefined || index === p.path.length - 1)
+  );
+  if (matchingPaths.length === 0) {
+    return undefined;
+  }
+
+  const result: ResultObject = {};
+  for (const { path } of matchingPaths) {
+    const key = path[index];
+    if (index === path.length - 1) {
+      // Last key: include value if it exists
+      if (current[key] !== undefined) {
+        result[key] = current[key];
+      }
+    } else {
+      // Not last key: recurse
+      const subResult = processPaths(current[key], matchingPaths, index + 1);
+      if (subResult !== undefined) {
+        result[key] = subResult;
+      }
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+
 export default pick;
