@@ -1,0 +1,255 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Performance Review Presentation</title>
+  <!-- Reveal.js CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/reveal.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/theme/white.min.css">
+  <!-- Chart.js for visualizations -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    /* Custom styles for the presentation */
+    .reveal {
+      font-family: 'Arial', sans-serif;
+      color: #333;
+    }
+    .reveal h1, .reveal h2, .reveal h3 {
+      color: #1F77B4;
+    }
+    .reveal .slide-content {
+      text-align: left;
+      padding: 20px;
+    }
+    .reveal ul {
+      list-style-type: disc;
+      margin-left: 40px;
+    }
+    .reveal .chart-container {
+      width: 50%;
+      margin: 0 auto;
+    }
+    .reveal .highlight-box {
+      background-color: #E6F3FF;
+      padding: 15px;
+      border-radius: 10px;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+      <!-- Slide 1: Title -->
+      <section>
+        <h1>Performance Review</h1>
+        <h3>[Your Name] & [Team Name]</h3>
+        <p>[Date] | [Company Name]</p>
+        <p>Presenter: [Your Name], [Your Job Title]</p>
+        <p>Team: [Team Name], 12 Members</p>
+        <p>Purpose: Review individual and team performance for [Time Period]</p>
+      </section>
+
+      <!-- Slide 2: Agenda -->
+      <section>
+        <h2>Agenda</h2>
+        <div class="slide-content">
+          <ul>
+            <li>Individual Performance Overview</li>
+            <li>Key Achievements and Knowledge Applied</li>
+            <li>Team Performance Summary</li>
+            <li>Individual Team Member Highlights</li>
+            <li>Challenges and Solutions</li>
+            <li>Future Goals and Action Plan</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Slide 3: Individual Performance Overview -->
+      <section>
+        <h2>My Contributions: [Your Name]</h2>
+        <div class="slide-content">
+          <div class="highlight-box">
+            <p><strong>Role Summary</strong>: Led a team of 12 in delivering [specific project/task].</p>
+            <p><strong>Key Metrics</strong>:</p>
+            <ul>
+              <li>Completed [X] projects, improving efficiency by [Y]%.</li>
+              <li>Implemented [specific process], saving [Z] hours monthly.</li>
+            </ul>
+            <p><strong>Knowledge Applied</strong>: [e.g., Technical skills, leadership, problem-solving].</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Slide 4: Key Achievements -->
+      <section>
+        <h2>My Key Achievements</h2>
+        <div class="slide-content">
+          <ul>
+            <li><strong>Achievement 1</strong>: Streamlined workflow, reducing delivery time by 20%.</li>
+            <li><strong>Achievement 2</strong>: Mentored 3 team members, improving their productivity by 15%.</li>
+            <li><strong>Achievement 3</strong>: Led [project], achieving [specific outcome].</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Slide 5: Team Performance Summary -->
+      <section>
+        <h2>Team Performance: [Team Name]</h2>
+        <div class="slide-content">
+          <p><strong>Overview</strong>: Team of 12 delivered [X] projects in [time period], achieving [key result].</p>
+          <p><strong>Key Metrics</strong>:</p>
+          <ul>
+            <li>Project Completion Rate: [X%]</li>
+            <li>Revenue Impact: [$X or qualitative impact]</li>
+            <li>Team Collaboration Score: [Based on feedback]</li>
+          </ul>
+          <div class="chart-container">
+            <canvas id="teamPerformanceChart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- Slide 6: Individual Team Member Highlights -->
+      <section>
+        <h2>Team Member Contributions</h2>
+        <div class="slide-content">
+          <div class="highlight-box">
+            <p><strong>[Member 1]</strong>: Excelled in [task/project], achieving [result].</p>
+            <p><strong>[Member 2]</strong>: Improved [specific area], contributing to [outcome].</p>
+            <p><strong>Summary</strong>: Diverse skill sets drove success in [project].</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Slide 7: Challenges and Solutions -->
+      <section>
+        <h2>Challenges and Solutions</h2>
+        <div class="slide-content">
+          <ul>
+            <li><strong>Challenge 1</strong>: [e.g., Resource constraints delayed [project].]
+              <ul>
+                <li><strong>Solution</strong>: Reallocated resources, reducing delay by 50%.</li>
+              </ul>
+            </li>
+            <li><strong>Challenge 2</strong>: [e.g., Team skill gap in [area].]
+              <ul>
+                <li><strong>Solution</strong>: Implemented training, improving performance by [X%].</li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Slide 8: Future Goals and Action Plan -->
+      <section>
+        <h2>Looking Ahead</h2>
+        <div class="slide-content">
+          <p><strong>Individual Goals</strong>:</p>
+          <ul>
+            <li>[Goal 1]: Complete [certification] by [date] to enhance [skill].</li>
+            <li>[Goal 2]: Lead [new project] to achieve [specific outcome].</li>
+          </ul>
+          <p><strong>Team Goals</strong>:</p>
+          <ul>
+            <li>[Goal 1]: Increase project delivery speed by 10% in Q1.</li>
+            <li>[Goal 2]: Implement [new tool/process] to improve collaboration.</li>
+          </ul>
+          <p><strong>Action Plan</strong>: Upskill team in [area], allocate budget for [resource].</p>
+        </div>
+      </section>
+
+      <!-- Slide 9: Closing -->
+      <section>
+        <h2>Thank You</h2>
+        <div class="slide-content">
+          <p><strong>Summary</strong>: Proud of [team’s/individual] achievements; committed to [future goal].</p>
+          <p><strong>Contact</strong>: [Your Name], [Email/Phone]</p>
+          <p><strong>Q&A</strong>: Questions or feedback welcome.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Reveal.js and Chart.js Scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/reveal.min.js"></script>
+  <script>
+    // Initialize Reveal.js
+    Reveal.initialize({
+      hash: true,
+      transition: 'slide',
+      width: 960,
+      height: 700
+    });
+
+    // Chart.js for Team Performance
+    const ctx = document.getElementById('teamPerformanceChart')?.getContext('2d');
+    if (ctx) {
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['Q1', 'Q2', 'Q3', 'Q4'],
+          datasets: [{
+            label: 'Team Project Completion Rate (%)',
+            data: [85, 90, 92, 95],
+            backgroundColor: ['#36A2EB', '#36A2EB', '#36A2EB', '#36A2EB'],
+            borderColor: ['#1F77B4', '#1F77B4', '#1F77B4', '#1F77B4'],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 100,
+              title: { display: true, text: 'Completion Rate (%)' }
+            },
+            x: { title: { display: true, text: 'Quarter' } }
+          },
+          plugins: { title: { display: true, text: 'Team Performance: Project Completion Rate' } }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
