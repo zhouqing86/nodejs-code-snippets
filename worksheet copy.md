@@ -440,6 +440,18 @@ private fun clearSheetXssfRaw(
 }
 ```
 
+Exclude it in build.gradle.kts (Kotlin DSL) or build.gradle (Groovy DSL)
+```
+
+dependencies {
+    // Keep poi-ooxml, but exclude poi-ooxml-lite
+    implementation("org.apache.poi:poi-ooxml:5.4.1") {
+        exclude(group = "org.apache.poi", module = "poi-ooxml-lite")
+    }
+    // Add full schemas
+    implementation("org.apache.poi:poi-ooxml-full:5.4.1")
+}
+```
 使用建议
 - 如果你要用 SXSSFWorkbook 写数据，请在“创建 SXSSFWorkbook 之前”，先对同源的 XSSFWorkbook 调用 clearSheetSafe。这样不会碰到 SXSSF 的随机访问限制，也避免解析公式。
 - 如果你的 Apache POI 版本较旧（例如 4.x 或 5.0/5.1），对 FILTER/UNIQUE/SORT 等函数的解析支持确实不全。清空函数用上面这版没问题；但如果你还需要“复制公式到另一个工作簿”，建议尽量升级到 5.2.x+，否则 setCellFormula 时会因为无法解析而失败。
