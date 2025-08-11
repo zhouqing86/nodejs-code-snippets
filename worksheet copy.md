@@ -385,6 +385,10 @@ fun clearSheetSafe(
 /**
  * XSSF 专用：通过底层 XML 原子清空，不触发公式解析。
  */
+import org.apache.poi.xssf.usermodel.XSSFSheet
+import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTSheetData
+import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTWorksheet
+
 private fun clearSheetXssfRaw(
     sheet: XSSFSheet,
     removeMerges: Boolean,
@@ -392,32 +396,28 @@ private fun clearSheetXssfRaw(
     clearComments: Boolean,
     clearHyperlinks: Boolean
 ) {
-    // 1) 合并单元格
+    val ct: CTWorksheet = sheet.ctWorksheet
+
     if (removeMerges) {
         for (i in sheet.numMergedRegions - 1 downTo 0) {
             sheet.removeMergedRegion(i)
         }
     }
 
-    // 2) 批注（整表清空，不逐个单元格处理，避免触发解析）
     if (clearComments) {
         runCatching {
             sheet.getCommentsTable(false)?.let { commentsTbl ->
-                val ct = commentsTbl.ctComments
-                if (ct.isSetCommentList) ct.unsetCommentList()
-                if (ct.isSetAuthors) ct.unsetAuthors()
+                val ctComments = commentsTbl.ctComments
+                if (ctComments.isSetCommentList) ctComments.unsetCommentList()
+                if (ctComments.isSetAuthors) ctComments.unsetAuthors()
             }
         }
     }
 
-    val ct = sheet.ctWorksheet
-
-    // 3) 超链接
     if (clearHyperlinks && ct.isSetHyperlinks) {
         ct.unsetHyperlinks()
     }
 
-    // 4) 条件格式 & 数据有效性 & 自动筛选
     if (clearConditionalFormattingAndDV) {
         val scf = sheet.sheetConditionalFormatting
         for (i in scf.numConditionalFormattings - 1 downTo 0) {
@@ -425,15 +425,11 @@ private fun clearSheetXssfRaw(
         }
         if (ct.isSetDataValidations) ct.unsetDataValidations()
         if (ct.isSetAutoFilter) ct.unsetAutoFilter()
-        // 如有需要也可清掉表格、分组等（谨慎，可能影响外部引用）
-        // if (ct.isSetTableParts) ct.unsetTableParts()
     }
 
-    // 5) 原子方式清空所有行/单元格（核心：不解析、不卡在 FILTER 等高级函数）
-    if (ct.isSetSheetData) ct.unsetSheetData()
-    ct.addNewSheetData()  // 留一个空的 <sheetData/>
+    // ***** Clear rows instantly *****
+    ct.setSheetData(CTSheetData.Factory.newInstance())
 
-    // 6) 维度、分页符等辅助信息
     if (ct.isSetDimension) ct.unsetDimension()
     if (ct.isSetRowBreaks) ct.unsetRowBreaks()
     if (ct.isSetColBreaks) ct.unsetColBreaks()
@@ -456,7 +452,7 @@ dependencies {
 - 如果你要用 SXSSFWorkbook 写数据，请在“创建 SXSSFWorkbook 之前”，先对同源的 XSSFWorkbook 调用 clearSheetSafe。这样不会碰到 SXSSF 的随机访问限制，也避免解析公式。
 - 如果你的 Apache POI 版本较旧（例如 4.x 或 5.0/5.1），对 FILTER/UNIQUE/SORT 等函数的解析支持确实不全。清空函数用上面这版没问题；但如果你还需要“复制公式到另一个工作簿”，建议尽量升级到 5.2.x+，否则 setCellFormula 时会因为无法解析而失败。
 - 如需额外清空：打印设置、冻结窗格、图形/图片、表格(XSSFTable)等，也可以加到 clearSheetXssfRaw 里（大多在 ctWorksheet.* 下即可处理）。需要的话告诉我你的范围，我补全代码。
-
+  
 Gotcha — you want to clear multiple sheets in **parallel** for speed, and you’re wondering whether Kotlin can use ForkJoinPool or even fibers.
 
 Let’s break it down:
