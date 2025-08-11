@@ -386,6 +386,7 @@ fun clearSheetSafe(
  * XSSF 专用：通过底层 XML 原子清空，不触发公式解析。
  */
 import org.apache.poi.xssf.usermodel.XSSFSheet
+import org.apache.poi.xssf.usermodel.XSSFComments
 import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTSheetData
 import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTWorksheet
 
@@ -405,13 +406,13 @@ private fun clearSheetXssfRaw(
     }
 
     if (clearComments) {
-        runCatching {
-            sheet.getCommentsTable(false)?.let { commentsTbl ->
-                val ctComments = commentsTbl.ctComments
+        sheet.getRelations()
+            .filterIsInstance<XSSFComments>()
+            .forEach { comments ->
+                val ctComments = comments.ctComments
                 if (ctComments.isSetCommentList) ctComments.unsetCommentList()
                 if (ctComments.isSetAuthors) ctComments.unsetAuthors()
             }
-        }
     }
 
     if (clearHyperlinks && ct.isSetHyperlinks) {
@@ -427,7 +428,7 @@ private fun clearSheetXssfRaw(
         if (ct.isSetAutoFilter) ct.unsetAutoFilter()
     }
 
-    // ***** Clear rows instantly *****
+    // Clear all rows instantly
     ct.setSheetData(CTSheetData.Factory.newInstance())
 
     if (ct.isSetDimension) ct.unsetDimension()
