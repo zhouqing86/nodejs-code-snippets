@@ -356,6 +356,7 @@ fun clearSheetSafe(
             clearComments,
             clearHyperlinks
         )
+        forceClearRowMap(sheet)
         return
     }
 
@@ -447,6 +448,15 @@ dependencies {
     }
     // Add full schemas
     implementation("org.apache.poi:poi-ooxml-full:5.4.1")
+}
+```
+
+```
+private fun forceClearRowMap(sheet: XSSFSheet) {
+    val field = XSSFSheet::class.java.getDeclaredField("_rows") // in POI 5.x, field name is "_rows"
+    field.isAccessible = true
+    val rowMap = field.get(sheet) as MutableMap<*, *>
+    rowMap.clear()
 }
 ```
 使用建议
