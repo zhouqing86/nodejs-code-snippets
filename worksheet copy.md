@@ -445,6 +445,257 @@ private fun clearSheetXssfRaw(
 - 如果你的 Apache POI 版本较旧（例如 4.x 或 5.0/5.1），对 FILTER/UNIQUE/SORT 等函数的解析支持确实不全。清空函数用上面这版没问题；但如果你还需要“复制公式到另一个工作簿”，建议尽量升级到 5.2.x+，否则 setCellFormula 时会因为无法解析而失败。
 - 如需额外清空：打印设置、冻结窗格、图形/图片、表格(XSSFTable)等，也可以加到 clearSheetXssfRaw 里（大多在 ctWorksheet.* 下即可处理）。需要的话告诉我你的范围，我补全代码。
 
+Gotcha — you want to clear multiple sheets in **parallel** for speed, and you’re wondering whether Kotlin can use ForkJoinPool or even fibers.
+
+Let’s break it down:
+
+---
+
+## 1. Is it safe to clear multiple sheets in parallel?
+
+**Yes**, with one important caveat:
+
+- Apache POI's `Workbook` is **not thread‑safe as a whole** — but **different `Sheet` objects can be mutated from different threads** IF no other sheet in the same workbook is being changed by those threads at the same time.
+- The danger is if two threads touch *shared workbook structures* (like shared style tables, fonts, shared strings) concurrently. But in our `clearSheetSafe` implementation, we only mutate one sheet's `XmlObject` (`CTWorksheet`) and sheet‑specific parts — so the "shared" traffic is minimal.
+- Still, the safest way:
+  - Avoid *adding/removing* sheets in parallel.
+  - Use parallelism only for independent, already‑existing sheets.
+  - Do **not** write the workbook while threads are still running — wait until all clears are done.
+
+---
+
+## 2. Parallelism options in Kotlin / JVM
+
+- **ForkJoinPool**: The classic Java parallelism engine behind Java’s `parallelStream()` and Kotlin's `Dispatchers.Default`. Good for CPU‑bound, one‑off concurrent tasks.
+- **Kotlin Coroutines (`Dispatchers.Default`)**: Wraps a ForkJoinPool common pool by default; better resource control & cancellation support; can also use Project Loom's virtual threads in new JVMs.
+- **Virtual Threads / Fibers**: With JDK 21+, you can use `Executors.newVirtualThreadPerTaskExecutor()` or Loom API. This can give you huge concurrency with low thread cost (but here you’re CPU‑bound, so real threads = same speed).
+- For **CPU‑bound** parsing & heavy XML manipulations, ordinary threads (ForkJoinPool / coroutines with `Dispatchers.Default`) are perfectly fine. Loom/fibers don’t offer raw throughput gains here; they just lower thread‑creation overhead.
+
+---
+
+## 3. Parallel clear example in Kotlin
+
+Here’s a **coroutine‑based** approach (which uses a JVM `ForkJoinPool` under the hood):
+
+```kotlin
+import kotlinx.coroutines.*
+import org.apache.poi.ss.usermodel.Workbook
+import org.apache.poi.ss.usermodel.Sheet
+
+fun clearSheetsInParallel(
+    workbook: Workbook,
+    removeMerges: Boolean = true,
+    clearConditionalFormattingAndDV: Boolean = true,
+    clearComments: Boolean = true,
+    clearHyperlinks: Boolean = true
+) = runBlocking {
+    // take a snapshot of sheets to avoid concurrent iteration issues
+    val sheets: List<Sheet> = (0 until workbook.numberOfSheets).map { workbook.getSheetAt(it) }
+
+    // Parallel work on each sheet (CPU-bound: use Dispatchers.Default)
+    withContext(Dispatchers.Default) {
+        sheets.map { sheet ->
+            async {
+                clearSheetSafe(
+                    sheet,
+                    removeMerges,
+                    clearConditionalFormattingAndDV,
+                    clearComments,
+                    clearHyperlinks
+                )
+            }
+        }.awaitAll()
+    }
+}
+```
+
+Usage:
+
+```kotlin
+val wb: Workbook = // load or build workbook
+clearSheetsInParallel(wb)  // Clears all sheets concurrently
+// do further processing or save workbook
+```
+
+---
+
+## 4. Strict Java / ForkJoinPool version
+
+If you want a *pure Java‑style* `ForkJoinPool` instead of coroutines:
+
+```kotlin
+import java.util.concurrent.ForkJoinPool
+
+fun clearSheetsForkJoin(workbook: Workbook) {
+    val sheets = (0 until workbook.numberOfSheets).map { workbook.getSheetAt(it) }
+    ForkJoinPool.commonPool().submit {
+        sheets.parallelStream().forEach { sheet ->
+            clearSheetSafe(sheet)
+        }
+    }.join() // wait until all done
+}
+```
+
+---
+
+## 5. Quick performance expectations
+- For a workbook with many sheets (say, 20×50 000 rows each), **parallel clearing** across available CPU cores can cut wall‑clock time to ~1/cores compared to sequential.
+- For fewer sheets (<4), the fork‑join overhead may be bigger than the gain.
+- The heavy step in `clearSheetSafe` is actually memory traversal & clear in `XmlBeans` structures — and that is nicely parallelizable because each sheet's XML is independent.
+
+---
+
+## 6. Bonus — possible micro‑opt tweak
+
+If you have *many thousands of small sheets*, you can improve granularity by using `ForkJoinPool` with a custom parallelism level:
+
+```kotlin
+val pool = ForkJoinPool(8) // manually match to CPU cores
+pool.submit {
+    sheets.parallelStream().forEach { clearSheetSafe(it) }
+}.join()
+```
+
+---
+
+✅ **Summary:**
+- Yes, Kotlin can run sheet‑level clears in parallel — `Dispatchers.Default` or Java `ForkJoinPool` work well.
+- We should not mutate the same sheet from multiple threads, but different sheets are fine.
+- For CPU‑bound POI sheet clears, threading buys you near‑linear speed‑up up to your CPU core count.
+
+---
+
+If you want, next I can give you a **JDK 21 Virtual Threads** version so each sheet clear runs on a Loom fiber — it's very pretty syntactically, but in this use‑case will perform about the same as ForkJoinPool with N = cores. That would be more interesting if you had lots of IO‑bound per‑sheet work.
+
+Got it — you want a `clearSheetsInParallel()` that will:
+
+1. Run sheet clears in parallel.
+2. Take a configurable **maxThreads** parameter.
+3. Let you easily control **CPU usage limits** (e.g., in Kubernetes via environment variables).
+4. Still use Kotlin coroutines for simplicity, but cap parallelism explicitly.
+
+Here’s a **clean, production‑ready** version that does exactly that:
+
+---
+
+```kotlin
+import kotlinx.coroutines.*
+import org.apache.poi.ss.usermodel.Sheet
+import org.apache.poi.ss.usermodel.Workbook
+import java.util.concurrent.Executors
+import kotlin.system.measureTimeMillis
+
+/**
+ * Clear all sheets in a workbook in parallel but respect a configurable maxThreads parameter.
+ *
+ * @param workbook The workbook whose sheets will be cleared.
+ * @param maxThreads Maximum number of threads to use in parallel (default: number of processors).
+ * @param removeMerges Whether to remove merged regions.
+ * @param clearConditionalFormattingAndDV Whether to remove conditional formatting and data validation.
+ * @param clearComments Whether to remove cell comments.
+ * @param clearHyperlinks Whether to remove hyperlinks.
+ */
+fun clearSheetsInParallelWithLimit(
+    workbook: Workbook,
+    maxThreads: Int = Runtime.getRuntime().availableProcessors(),
+    removeMerges: Boolean = true,
+    clearConditionalFormattingAndDV: Boolean = true,
+    clearComments: Boolean = true,
+    clearHyperlinks: Boolean = true
+) {
+    // Snapshot sheet references to avoid concurrent modification
+    val sheets: List<Sheet> = (0 until workbook.numberOfSheets).map { workbook.getSheetAt(it) }
+
+    // Create a bounded thread pool
+    val dispatcher = Executors.newFixedThreadPool(maxThreads).asCoroutineDispatcher()
+
+    val elapsed = measureTimeMillis {
+        runBlocking(dispatcher) {
+            sheets.map { sheet ->
+                async {
+                    clearSheetSafe(
+                        sheet,
+                        removeMerges,
+                        clearConditionalFormattingAndDV,
+                        clearComments,
+                        clearHyperlinks
+                    )
+                }
+            }.awaitAll()
+        }
+    }
+    dispatcher.close()
+    println("Cleared ${sheets.size} sheets in ${elapsed} ms using maxThreads=$maxThreads")
+}
+```
+
+---
+
+### How to make `maxThreads` configurable via environment variables
+
+In your code where you call `clearSheetsInParallelWithLimit`, read the environment variable set in Kubernetes:
+
+```kotlin
+fun getMaxThreadsFromEnv(defaultThreads: Int = Runtime.getRuntime().availableProcessors()): Int {
+    val envValue = System.getenv("CLEAR_SHEETS_MAX_THREADS")
+    return envValue?.toIntOrNull()?.coerceAtLeast(1) ?: defaultThreads
+}
+
+// Example usage:
+val workbook = /* load your workbook here */
+clearSheetsInParallelWithLimit(
+    workbook,
+    maxThreads = getMaxThreadsFromEnv()
+)
+```
+
+Then, in your Kubernetes YAML:
+
+```yaml
+env:
+  - name: CLEAR_SHEETS_MAX_THREADS
+    value: "3"
+```
+
+This will **force** the thread pool to only use 3 threads, regardless of how many CPUs are assigned to the pod.
+
+---
+
+### Why a Fixed Thread Pool instead of `Dispatchers.Default.limitedParallelism`?
+
+- `Dispatchers.Default.limitedParallelism(N)` is great if you already want to use the default coroutine pool (backed by a ForkJoinPool).
+- But using `Executors.newFixedThreadPool(maxThreads)`:
+  - Gives you **hard enforcement** — it will never schedule more than `maxThreads` concurrent tasks.
+  - Avoids interference with unrelated coroutines sharing `Dispatchers.Default`.
+  - Makes it easy to profile/monitor because it has its own pool separate from other parts of your app.
+
+---
+
+### Example Run in AKS (CPU limit 5)
+
+If you set:
+```
+CLEAR_SHEETS_MAX_THREADS=5
+```
+and your pod’s CPU limit is also 5, you’ll saturate all 5 vCPUs — clearing will max out your limit but won’t oversubscribe.
+
+If you set:
+```
+CLEAR_SHEETS_MAX_THREADS=3
+```
+you’ll use only 3 worker threads, leaving ~2 vCPUs free for other work — helpful if sheet clearing is just a part of a larger job.
+
+---
+
+This design is especially Kubernetes‑friendly because:
+- You can tune a single env var in your deployment without rebuilding the code.
+- You avoid unexpected CPU spikes when multiple large workbooks are processed on the same pod.
+- You can keep your concurrency lower than your CPU quota if you want to be a “good neighbor” to other processes.
+
+---
+
+If you want, I can also give you **a variant that uses Java’s virtual threads (Loom)** — letting each sheet clear still run in “parallel” from your code’s perspective, but multiplexed onto far fewer carriers, which in I/O‑heavy tasks can be even lighter on CPU in shared environments. For your specific case (mostly CPU‑bound XML clearing), controlling real threads like above is the right move for maximum throughput.
+
 ## From perplexity
 关于你的需求：
 
