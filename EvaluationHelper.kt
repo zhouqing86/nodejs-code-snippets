@@ -117,3 +117,22 @@ fun createPoiWorkbookFromResource(resourcePath: String): Workbook {
             inputStream.close()
         }
     }
+
+    fun clearPoiFormulaCacheAndSaveToTempFile(workbook: Workbook): File {
+        // Get the formula evaluator for the workbook
+        val evaluator: FormulaEvaluator = workbook.creationHelper.createFormulaEvaluator()
+        
+        // Clear all cached formula results
+        evaluator.clearAllCachedResultValues()
+        
+        // Save the workbook to a temporary file
+        val tempFile = File.createTempFile("poi_cleared_formulas_", ".xlsx").apply {
+            deleteOnExit() // Ensure the file is deleted when the JVM exits
+        }
+        
+        FileOutputStream(tempFile).use { outputStream ->
+            workbook.write(outputStream)
+        }
+        
+        return tempFile
+    }
