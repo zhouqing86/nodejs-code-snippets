@@ -118,11 +118,25 @@ fun createPoiWorkbookFromResource(resourcePath: String): Workbook {
         }
     }
 
-    fun clearPoiFormulaCacheAndSaveToTempFile(workbook: Workbook): File {
-        // Get the formula evaluator for the workbook
+   fun clearPoiFormulaCacheAndSaveToTempFile(workbook: Workbook): File {
+        // Iterate through all sheets in the workbook
+        for (sheetIndex in 0 until workbook.numberOfSheets) {
+            val sheet = workbook.getSheetAt(sheetIndex)
+            // Iterate through all rows in the sheet
+            for (row in sheet) {
+                // Iterate through all cells in the row
+                for (cell in row) {
+                    // Check if the cell contains a formula
+                    if (cell.cellType == CellType.FORMULA) {
+                        // Clear the cached formula result by setting it to blank
+                        cell.setCellFormula(cell.cellFormula) // Re-set the formula to clear the cached result
+                    }
+                }
+            }
+        }
+
+        // Clear the in-memory formula evaluator cache
         val evaluator: FormulaEvaluator = workbook.creationHelper.createFormulaEvaluator()
-        
-        // Clear all cached formula results
         evaluator.clearAllCachedResultValues()
         
         // Save the workbook to a temporary file
