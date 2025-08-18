@@ -89,3 +89,31 @@ fun evaluateFormulasWithPOI(inputFilePath: String, outputFilePath: String) {
         }
     }
 }
+
+fun createPoiWorkbookFromResource(resourcePath: String): Workbook {
+        val inputStream: InputStream? = ExcelWorkbookUtils::class.java.classLoader.getResourceAsStream(resourcePath)
+            ?: throw IllegalArgumentException("Resource file not found: $resourcePath")
+        
+        return try {
+            XSSFWorkbook(inputStream)
+        } finally {
+            inputStream.close()
+        }
+    }
+
+    /**
+     * Creates an Aspose.Cells Workbook from an Excel file located in the resources directory.
+     * @param resourcePath The path to the Excel file in the resources directory (e.g., "template.xlsx").
+     * @return The Aspose.Cells Workbook object.
+     * @throws Exception If the file is not found or cannot be read.
+     */
+    fun createAsposeWorkbookFromResource(resourcePath: String): AsposeWorkbook {
+        val inputStream: InputStream? = ExcelWorkbookUtils::class.java.classLoader.getResourceAsStream(resourcePath)
+            ?: throw IllegalArgumentException("Resource file not found: $resourcePath")
+        
+        return try {
+            AsposeWorkbook(inputStream)
+        } finally {
+            inputStream.close()
+        }
+    }
