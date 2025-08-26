@@ -33,22 +33,21 @@ async function renameWorksheetAndUpdateFormulas(
     // Iterate through all cells in the worksheet
     ws.eachRow((row) => {
       row.eachCell((cell) => {
-        // Check if cell has a formula
         if (cell.formula) {
           cell.value = {
             formula: updateFormula(cell.formula),
             result: cell.result,
+            ...(cell.value as any).ref ? { ref: (cell.value as any).ref } : {},
+            ...(cell.value as any).shareType ? { shareType: (cell.value as any).shareType } : {},
           };
         }
+        // Check if cell has a shared formula
         if ((cell.value as any)?.sharedFormula) {
-          const masterCellAddress = (cell.value as any).sharedFormula;
-          const masterCell = ws.getCell(masterCellAddress);
-          if (masterCell.formula) {
-            cell.value = {
-              sharedFormula: updateFormula(masterCell.formula),
-              result: cell.result,
-            };
-          }
+          // Preserve the sharedFormula reference and result
+          cell.value = {
+            sharedFormula: (cell.value as any).sharedFormula,
+            result: cell.result,
+          };
         }
       });
     });
