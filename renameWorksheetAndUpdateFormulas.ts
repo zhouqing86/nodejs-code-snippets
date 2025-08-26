@@ -40,9 +40,9 @@ async function renameWorksheetAndUpdateFormulas(
             result: cell.result,
           };
         }
-        // Check if cell has a shared formula
-        if (cell.isSharedFormula) {
-          const masterCell = ws.getCell(cell.master.row, cell.master.col);
+        if ((cell.value as any)?.sharedFormula) {
+          const masterCellAddress = (cell.value as any).sharedFormula;
+          const masterCell = ws.getCell(masterCellAddress);
           if (masterCell.formula) {
             cell.value = {
               sharedFormula: updateFormula(masterCell.formula),
@@ -114,15 +114,15 @@ describe('renameWorksheetAndUpdateFormulas', () => {
     const sheet2 = workbook.addWorksheet('Sheet2');
     
     // Create shared formula
-    sheet2.getCell('A1').value = { formula: 'Sheet1!A1*2', result: 20 };
-    sheet2.getCell('A2').value = { sharedFormula: 'Sheet1!A1*2', result: 20 };
+    sheet2.getCell('A1').value = { formula: 'Sheet1!A1*2', result: 20, ref: 'A1:A2', shareType: 'shared' };
+    sheet2.getCell('A2').value = { sharedFormula: 'A1', result: 20 };
     
     await renameWorksheetAndUpdateFormulas(workbook, 'Sheet1', 'DataSheet');
 
     expect(workbook.getWorksheet('DataSheet')).toBeDefined();
     expect(sheet2.getCell('A1').formula).toBe('DataSheet!A1*2');
-    expect(sheet2.getCell('A2').sharedFormula).toBe('DataSheet!A1*2');
-    expect(sheet2.getCell('A2').result).toBe(20);
+    expect((sheet2.getCell('A2').value as any).sharedFormula).toBe('A1');
+    expect((sheet2.getCell('A2').value as any).result).toBe(20);
   });
 
   test('should not modify formulas that don’t reference the renamed sheet', async () => {
