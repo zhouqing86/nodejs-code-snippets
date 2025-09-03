@@ -147,3 +147,187 @@ If the `INDEX`/`MATCH` formula still causes issues in Apache POI, you can:
 - If errors persist, check the POI logs (enable `POI.FormulaEval` logging) for details on unsupported functions or array handling issues.[](https://poi.apache.org/components/spreadsheet/eval.html)
 
 This `INDEX`/`MATCH` replacement should work reliably in Apache POI for your use case, as it avoids the problematic aspects of `LOOKUP` while achieving the same result. If you need further assistance with implementation or encounter specific errors, let me know![](https://poi.apache.org/components/spreadsheet/eval-devguide.html)[](https://poi.apache.org/components/spreadsheet/eval.html)[](https://medium.com/%40pjfanning/excel-formula-evaluation-in-apache-poi-92d9c81891ea)
+
+
+The issue you're encountering is that Apache POI is automatically converting the formula `=INDEX(B$1:B2,MATCH(1,(A$1:A2<=C1)*(B$1:B2<>0),0))` to `=INDEX(B$1:B2,MATCH(1,(@A$1:A2<=C1)*(@B$1:B2<>0),0))`, adding the `@` (implicit intersection operator) to the range references. This change is causing the formula evaluation to fail in Apache POI. Let’s break down why this happens and how to fix it.
+
+### Why Apache POI Adds `@` and Why It Fails
+1. **Implicit Intersection Operator (`@`)**:
+   - The `@` operator was introduced in Excel’s dynamic array formulas (Excel 365/2021) to explicitly request a single value from a range or array, ensuring compatibility with older array formulas.
+   - When Apache POI processes formulas, its formula parser (as of POI 5.2.0 or later) may automatically insert `@` for certain range references in array formulas to mimic Excel’s behavior, especially when it detects that the formula might be evaluated in a context expecting a single value.
+   - In your formula, `A$1:A2` and `B$1:B2` are range references that produce arrays. POI’s parser may misinterpret the context and prepend `@` to these ranges, effectively reducing `A$1:A2` to a single value (e.g., the value in the current row) rather than treating it as an array. This breaks the array operation `(A$1:A2<=C1)*(B$1:B2<>0)`, which expects to evaluate the entire range.
+
+2. **Why Evaluation Fails**:
+   - The formula `=INDEX(B$1:B2,MATCH(1,(@A$1:A2<=C1)*(@B$1:B2<>0),0))` with `@` operators evaluates `A$1:A2` and `B$1:B2` as single values (e.g., `A2` and `B2` if the formula is in row 2). This results in:
+     - `(@A$1:A2<=C1)` → `A2<=C1` → `TRUE` (since `A2` = 2025-08-01 and `C1` = 2025-08-01).
+     - `(@B$1:B2<>0)` → `B2<>0` → `FALSE` (since `B2` = 0).
+     - `(TRUE)*(FALSE)` → `0`.
+     - `MATCH(1, 0, 0)` fails because it’s looking for `1` in a single value `0`, resulting in a `#N/A` error or evaluation failure.
+   - Apache POI’s formula evaluator may not handle this modified formula correctly because the `@` operator disrupts the array context that `MATCH` expects, and POI’s support for dynamic array formulas (including `@`) is incomplete or buggy.
+
+3. **Apache POI Limitations**:
+   - Apache POI (even in versions like 5.2.0 or later) has limited support for Excel’s dynamic array formulas introduced in Excel 365. The insertion of `@` suggests POI is trying to emulate Excel’s behavior but incorrectly applies it to array operations.
+   - The `FormulaEvaluator` in POI may throw a `NotImplementedException` or produce incorrect results when encountering `@` in array formulas, as it struggles with dynamic array semantics or array operations in `MATCH`.
+
+### Workaround Solutions
+To resolve this, we need to either prevent POI from inserting `@` operators or use a formula that avoids array operations entirely, ensuring compatibility with POI’s formula evaluator. Here are two solutions:
+
+#### Solution 1: Simplify the Formula to Avoid Array Operations
+Instead of relying on array formulas, use a combination of `IF`, `INDEX`, and `MATCH` that POI can evaluate without implicit array handling. A reliable alternative is to iterate over the rows explicitly or use a formula that avoids multi-cell range operations.
+
+**Alternative Formula**:
+```
+=INDEX(B$1:B2,MAX(IF((A$1:A2<=C1)*(B$1:B2<>0),ROW(A$1:A2)-ROW(A$1)+1)))
+```
+
+**Explanation**:
+- `(A$1:A2<=C1)*(B$1:B2<>0)`: Produces an array of `1` and `0` (same as before):
+  - Row 1: `(2025-07-30<=2025-08-01)*(1.02<>0)` → `1`
+  - Row 2: `(2025-08-01<=2025-08-01)*(0<>0)` → `0`
+- `IF(...,ROW(A$1:A2)-ROW(A$1)+1)`: Returns the relative row numbers where the condition is `TRUE` (e.g., `[1, FALSE]`).
+- `MAX(...)`: Finds the highest row number where the condition is met (e.g., `1`).
+- `INDEX(B$1:B2, ...)`: Returns the value from `B$1:B2` at the max row position (e.g., `B1` = `1.02`).
+
+**Why This Works**:
+- This formula is an array formula in Excel (requires `Ctrl+Shift+Enter` in older versions), but Apache POI’s `FormulaEvaluator` supports `IF`, `MAX`, `ROW`, and `INDEX` well, even in array contexts.
+- It avoids the complex array arithmetic that triggers `@` insertion in POI’s parser.
+
+**Java Code to Test**:
+```java
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import java.io.FileOutputStream;
+import java.text.SimpleDateFormat;
+
+public class FormulaEvaluation {
+    public static void main(String[] args) throws Exception {
+        XSSFWorkbook workbook = new XSSFWorkbook();
+        XSSFSheet sheet = workbook.createSheet("Sheet1");
+
+        // Set date format
+        CellStyle dateStyle = workbook.createCellStyle();
+        dateStyle.setDataFormat(workbook.getCreationHelper().createDataFormat().getFormat("yyyy-mm-dd"));
+
+        // Set data
+        Row row1 = sheet.createRow(0);
+        Cell a1 = row1.createCell(0);
+        a1.setCellValue(new SimpleDateFormat("yyyy-MM-dd").parse("2025-07-30"));
+        a1.setCellStyle(dateStyle);
+        Cell b1 = row1.createCell(1);
+        b1.setCellValue(1.02);
+
+        Row row2 = sheet.createRow(1);
+        Cell a2 = row2.createCell(0);
+        a2.setCellValue(new SimpleDateFormat("yyyy-MM-dd").parse("2025-08-01"));
+        a2.setCellStyle(dateStyle);
+        Cell b2 = row2.createCell(1);
+        b2.setCellValue(0);
+
+        Row row3 = sheet.createRow(2);
+        Cell c1 = row3.createCell(2);
+        c1.setCellValue(new SimpleDateFormat("yyyy-MM-dd").parse("2025-08-01"));
+        c1.setCellStyle(dateStyle);
+
+        // Set formula
+        Cell formulaCell = row3.createCell(3);
+        formulaCell.setCellFormula("INDEX(B$1:B2,MAX(IF((A$1:A2<=C1)*(B$1:B2<>0),ROW(A$1:A2)-ROW(A$1)+1)))");
+
+        // Evaluate
+        FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
+        evaluator.evaluateAll();
+
+        // Get result
+        CellValue cellValue = evaluator.evaluate(formulaCell);
+        System.out.println("Formula result: " + cellValue.getNumberValue()); // Should print 1.02
+
+        // Save workbook
+        try (FileOutputStream out = new FileOutputStream("formula_output.xlsx")) {
+            workbook.write(out);
+        }
+        workbook.close();
+    }
+}
+```
+
+#### Solution 2: Compute Logic in Java
+If the above formula still triggers `@` insertion or fails, you can bypass POI’s formula evaluator entirely by implementing the logic in Java. This is a robust workaround when POI’s formula support is unreliable.
+
+**Java Implementation**:
+```java
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import java.io.FileOutputStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
+public class CustomFormulaLogic {
+    public static void main(String[] args) throws Exception {
+        XSSFWorkbook workbook = new XSSFWorkbook();
+        XSSFSheet sheet = workbook.createSheet("Sheet1");
+
+        // Set date format
+        CellStyle dateStyle = workbook.createCellStyle();
+        dateStyle.setDataFormat(workbook.getCreationHelper().createDataFormat().getFormat("yyyy-mm-dd"));
+
+        // Set data
+        Row row1 = sheet.createRow(0);
+        Cell a1 = row1.createCell(0);
+        a1.setCellValue(new SimpleDateFormat("yyyy-MM-dd").parse("2025-07-30"));
+        a1.setCellStyle(dateStyle);
+        Cell b1 = row1.createCell(1);
+        b1.setCellValue(1.02);
+
+        Row row2 = sheet.createRow(1);
+        Cell a2 = row2.createCell(0);
+        a2.setCellValue(new SimpleDateFormat("yyyy-MM-dd").parse("2025-08-01"));
+        a2.setCellStyle(dateStyle);
+        Cell b2 = row2.createCell(1);
+        b2.setCellValue(0);
+
+        Row row3 = sheet.createRow(2);
+        Cell c1 = row3.createCell(2);
+        c1.setCellValue(new SimpleDateFormat("yyyy-MM-dd").parse("2025-08-01"));
+        c1.setCellStyle(dateStyle);
+
+        // Compute logic in Java
+        Cell resultCell = row3.createCell(3);
+        double result = computeLookup(sheet, 0, 1, 2, 2); // Columns A, B, C, row 2
+        resultCell.setCellValue(result);
+
+        // Save workbook
+        try (FileOutputStream out = new FileOutputStream("custom_output.xlsx")) {
+            workbook.write(out);
+        }
+        workbook.close();
+    }
+
+    private static double computeLookup(Sheet sheet, int colA, int colB, int colC, int endRow) {
+        Date c1Value = sheet.getRow(endRow).getCell(colC).getDateCellValue();
+        double lastValidValue = 0;
+        for (int i = 0; i <= endRow; i++) {
+            Row row = sheet.getRow(i);
+            Date aValue = row.getCell(colA).getDateCellValue();
+            double bValue = row.getCell(colB).getNumericCellValue();
+            if (aValue.compareTo(c1Value) <= 0 && bValue != 0) {
+                lastValidValue = bValue;
+            }
+        }
+        return lastValidValue; // Returns 1.02
+    }
+}
+```
+
+**Explanation**:
+- The `computeLookup` method iterates over rows in columns `A` and `B`, checking if `A`’s date is `<= C1` and `B`’s value is non-zero, and keeps the last valid `B` value.
+- This avoids any formula evaluation issues in POI and directly computes the result (`1.02`).
+
+### Additional Notes
+- **POI Version**: Ensure you’re using Apache POI 5.2.0 or later, as older versions have even less robust formula support. Check for updates beyond 5.2.0, as bug fixes for array formulas or `@` handling may have been added.
+- **Debugging `@` Insertion**: If POI continues to insert `@`, you can try setting the formula string explicitly without array operations or use `workbook.setForceFormulaRecalculation(true)` to ensure Excel recalculates the formula correctly when the file is opened, bypassing POI’s evaluator.
+- **Excel Validation**: Test the formula `=INDEX(B$1:B2,MAX(IF((A$1:A2<=C1)*(B$1:B2<>0),ROW(A$1:A2)-ROW(A$1)+1)))` in Excel to confirm it returns `1.02`. If it works in Excel but fails in POI, the issue is definitely POI’s handling of array formulas.
+- **Logging**: Enable POI logging (`org.apache.poi.ss.formula`) to diagnose evaluation errors or confirm if `@` insertion is the root cause.
+
+### Why Solution 1 Should Work
+The `INDEX`/`MAX`/`IF` formula is less likely to trigger `@` insertion because it uses `IF` to explicitly handle the array logic, which POI’s evaluator supports better than direct array arithmetic. If it still fails, Solution 2 (Java logic) is a foolproof fallback.
+
+Try Solution 1 first, as it keeps the logic in the spreadsheet. If it fails or `@` persists, use Solution 2. Let me know if you encounter specific errors or need further tweaks!
