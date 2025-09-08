@@ -157,6 +157,7 @@ describe('convertToString', () => {
 });
 ```
 
+```
 function replaceSubString(str, oldSubStr, newSubStr) {
     // Escape special regex characters in oldSubStr
     const escapedOldSubStr = oldSubStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -168,5 +169,5 @@ function replaceSubString(str, oldSubStr, newSubStr) {
         return `${p1}${newSubStr}${p2}`;
     });
 }
-
+```
 
