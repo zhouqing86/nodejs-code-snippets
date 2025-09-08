@@ -2,9 +2,9 @@ I'll create a TypeScript function to convert single curly braces to double curly
 
 ```
 export function convertCurlyBraces(input: string): string {
-    // Construct regex using RegExp to match single curly braces
+    // Construct regex using RegExp to match single curly braces, avoiding those within double braces
     const regex = new RegExp(
-        String.raw`(?<![{]){([^{}]*?)(?:\s*)}(?!})`,
+        String.raw`(?<![{]{2}){([^{}]*?)(?:\s*)}(?![}]{2})`,
         'g'
     );
 
