@@ -94,3 +94,69 @@ describe('convertCurlyBraces', () => {
    - For example, you could update the previous `renderLiquidTemplate` function to use `convertCurlyBraces` instead of its current `preprocessTemplate`.
 
 The code ensures robust conversion of single curly braces to double curly braces with proper spacing, while preserving existing double curly braces, and the tests validate all edge cases.
+
+
+```
+import _ from 'lodash';
+
+/**
+ * Converts an input value to a string.
+ * - For primitive types, it uses Lodash's _.toString method.
+ * - For arrays or objects, it uses JSON.stringify.
+ * @param input - The value to convert to a string.
+ * @returns The string representation of the input.
+ */
+export function convertToString(input: unknown): string {
+  if (_.isArray(input) || _.isObject(input)) {
+    // Use JSON.stringify for arrays and objects
+    return JSON.stringify(input);
+  } else {
+    // Use lodash's toString for primitive types
+    return _.toString(input);
+  }
+}
+```
+
+```
+import { convertToString } from './convertToString';
+
+describe('convertToString', () => {
+  it.each([
+    // Primitive types
+    [42, '42'], // number
+    [true, 'true'], // boolean
+    [null, ''], // null
+    [undefined, ''], // undefined
+
+    // Strings
+    ['hello', 'hello'], // string
+    ['', ''], // empty string
+
+    // Symbols
+    [Symbol('unique'), 'Symbol(unique)'], // symbol
+
+    // Arrays
+    [[1, 2, 3], '[1,2,3]'], // array of numbers
+    [['apple', 'banana'], '["apple","banana"]'], // array of strings
+    [[], '[]'], // empty array
+
+    // Objects
+    [{ key: 'value' }, '{"key":"value"}'], // simple object
+    [{}, '{}'], // empty object
+
+    // Nested objects
+    [{ key: { nestedKey: 'nestedValue' } }, '{"key":{"nestedKey":"nestedValue"}}'],
+
+    // Edge cases
+    [[undefined, null], '[null,null]'], // array with undefined/null
+    [{ a: undefined }, '{}'], // object with undefined value (JSON.stringify omits it)
+    [{ a: null }, '{"a":null}'], // object with null value
+  ])('correctly converts %p to string "%s"', (input, expected) => {
+    expect(convertToString(input)).toBe(expected);
+  });
+});
+```
+
+
+
+
