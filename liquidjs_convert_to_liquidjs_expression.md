@@ -2,9 +2,7 @@ I'll create a TypeScript function to convert single curly braces to double curly
 
 ```
 export function convertCurlyBraces(input: string): string {
-    export function convertCurlyBraces(input: string): string {
   return input.replace(/(?<!\{)\{([^{}]*)\}(?!\})/g, (_, content) => `{{ ${content.trim()} }}`);
-}
 }
 ```
 
