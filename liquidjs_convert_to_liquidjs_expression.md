@@ -157,16 +157,16 @@ describe('convertToString', () => {
 });
 ```
 
-```
 function replaceSubString(str, oldSubStr, newSubStr) {
+    // Escape special regex characters in oldSubStr
+    const escapedOldSubStr = oldSubStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // Create a regex pattern that matches oldSubStr with boundaries (space, |, {, }, or start/end of string)
-    const pattern = new RegExp(`(^|\\s|\\||\\{|\\})${oldSubStr}($|\\s|\\||\\{|\\})`, 'g');
+    const pattern = new RegExp(`(^|\\s|\\||\\{|\\})${escapedOldSubStr}($|\\s|\\||\\{|\\})`, 'g');
     
     // Replace matched substrings, preserving the boundaries
     return str.replace(pattern, (match, p1, p2) => {
         return `${p1}${newSubStr}${p2}`;
     });
 }
-```
 
 
