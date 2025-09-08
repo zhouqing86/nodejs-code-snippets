@@ -2,14 +2,16 @@ I'll create a TypeScript function to convert single curly braces to double curly
 
 ```
 export function convertCurlyBraces(input: string): string {
-    // Construct regex using RegExp to match single curly braces, avoiding those within double braces
+    // Construct regex to match single curly braces, skipping those within double curly braces
     const regex = new RegExp(
-        String.raw`(?<![{]{2}){([^{}]*?)(?:\s*)}(?![}]{2})`,
+        String.raw`(?<![{]{2}){([^{}\s][^{}]*?)(?:\s*)}(?![}]{2})|(?<![{]{2}){(\s*[^{}]*?\s*)}(?![}]{2})`,
         'g'
     );
 
     // Replace single curly braces {var} with {{ var }}
-    return input.replace(regex, (match, content) => {
+    return input.replace(regex, (match, content1, content2) => {
+        // Use the captured group that matched (content1 for non-space starting, content2 for any content)
+        const content = content1 || content2;
         // Ensure a space after opening braces and before closing braces
         const trimmedContent = content.trim();
         return `{{ ${trimmedContent.length > 0 ? trimmedContent : ''} }}`;
