@@ -1,6 +1,6 @@
 要让LiquidJS支持单大括号`{`和`}`以及双大括号`{{`和`}}`，并且允许表达式前后没有空格（例如`hello, {name}`或`hello, {{name}}`），我们需要调整LiquidJS的配置，特别是正则表达式，以正确解析这些情况。LiquidJS默认要求分隔符两侧有空格，但可以通过自定义`trimTagLeft`、`trimTagRight`、`trimOutputLeft`和`trimOutputRight`设置为`true`来允许无空格的情况，同时保持对单双大括号的支持。以下是更新后的TypeScript实现和Jest单元测试。
 
-<xaiArtifact artifact_id="5b64d0cc-4a32-4c40-8fe2-bd1967137005" artifact_version_id="48350426-1f41-4ddc-a388-67156c4f1f08" title="liquidjs_custom.ts" contentType="text/typescript">
+```
 import { Liquid, LiquidOptions } from 'liquidjs';
 
 // 定义接口以确保数据类型安全
@@ -33,11 +33,9 @@ export async function renderLiquidTemplate(templateString: string, data: Templat
         throw new Error(`Error rendering template: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
-</xaiArtifact>
+```
 
-<xaiArtifact artifact_id="9625fe37-64eb-473f-810f-3c32232830df" artifact_version_id="b4bd7980-cfa0-44da-a9c6-296495b99345" title="liquidjs_custom.test.ts" contentType="text/typescript">
-import { renderLiquidTemplate } from './liquidjs_custom';
-
+```
 describe('renderLiquidTemplate', () => {
     const data = {
         name: 'Alice',
@@ -95,7 +93,7 @@ describe('renderLiquidTemplate', () => {
         await expect(renderLiquidTemplate(template, data)).rejects.toThrow('Error rendering template');
     });
 });
-</xaiArtifact>
+```
 
 ### 说明：
 1. **TypeScript实现更新**：
