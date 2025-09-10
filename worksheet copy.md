@@ -1047,16 +1047,18 @@ workbook.setSheetOrder(newSheet.sheetName, sheetIndex) // 调整顺序回原始�
 你只加载一次XSSFWorkbook，基于它创建SXSSFWorkbook是可行的，**SXSSFWorkbook写入不会修改原来的XSSFWorkbook的内存数据结构**，两者相对独立。这样也能避免内存占用过高，但要注意不要同时修改两者，避免数据不同步。
 
 ```
-fun clearCalcChain(wb: XSSFWorkbook) {
-    val chain: XSSFCalculationChain? = wb.calculationChain
-    if (chain != null) {
-        // Detach the calcChain part from the workbook package
-        wb.unregisterRelation(chain)
-        // Null out the private field via reflection (since POI caches it)
+fun clearCalcChain(workbook: XSSFWorkbook) {
+    val pkg = workbook.packagePart.package
+    val partName = PackagingURIHelper.createPartName("/xl/calChain.xml")
+    if (pkg.containPart(partName)) {
+        pkg.removePart(partName)
+    }
+    // also clear cached reference inside XSSFWorkbook so it won't write it back
+    try {
         val f = XSSFWorkbook::class.java.getDeclaredField("calcChain")
         f.isAccessible = true
-        f.set(wb, null)
-    }
+        f.set(workbook, null)
+    } catch (ignore: Exception) { }
 }
 ```
 
