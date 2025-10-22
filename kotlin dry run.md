@@ -312,7 +312,13 @@ class ExcelController {
         return if (osBean is UnixOperatingSystemMXBean) {
             osBean.processCpuTime
         } else {
-            -1 // CPU time not available on this platform
+            val threadMXBean: ThreadMXBean = ManagementFactory.getThreadMXBean()
+            if (threadMXBean.isThreadCpuTimeSupported) {
+                return threadMXBean.getAllThreadIds().sumOf { threadId ->
+                    threadMXBean.getThreadCpuTime(threadId).takeIf { it >= 0 } ?: 0
+                }
+            }
+            return -1
         }
     }
 
