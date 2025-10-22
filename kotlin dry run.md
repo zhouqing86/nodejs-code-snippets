@@ -220,3 +220,179 @@ When calling the API with `dryRun=true`, you might get:
 - **Memory Difference**: `(209715200 - 104857600) / 1024 / 1024 = ~100 MB`
 
 This approach provides a robust way to measure performance while keeping the implementation straightforward. If you need help with specific parts (e.g., JMeter setup, Excel generation logic, or additional metrics), let me know!
+
+
+Since your Kotlin and Spring API uses `HttpServletResponse` to directly write the Excel file bytes and headers, and you want to include performance metrics (CPU and memory usage) in the response headers when `dryRun=true` without changing the response body, you can modify the endpoint to capture metrics and set them as custom headers. Below is an implementation that integrates with `HttpServletResponse` to achieve this.
+
+### Implementation
+
+The API will:
+- Capture CPU and memory usage before and after the Excel generation logic when `dryRun=true`.
+- Write the metrics as custom response headers (e.g., `X-Start-Cpu-Time`, `X-End-Cpu-Time`, `X-Start-Memory`, `X-End-Memory`).
+- Write the Excel file bytes directly to the `HttpServletResponse` output stream, preserving the existing response structure.
+
+Here’s the updated Kotlin code for your Spring controller:
+
+```kotlin
+package com.example.demo
+
+import org.springframework.web.bind.annotation.*
+import javax.servlet.http.HttpServletResponse
+import java.lang.management.ManagementFactory
+import java.lang.management.OperatingSystemMXBean
+import com.sun.management.UnixOperatingSystemMXBean
+import java.lang.Runtime
+import org.apache.poi.ss.usermodel.Workbook
+import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import java.util.Base64
+import java.io.ByteArrayOutputStream
+
+@RestController
+@RequestMapping("/api")
+class ExcelController {
+
+    data class ExcelRequest(
+        val template: String, // Base64 encoded template
+        val data: Map<String, Any> // Data to populate the Excel
+    )
+
+    @PostMapping("/generate-excel")
+    fun generateExcel(
+        @RequestParam("dryRun") dryRun: Boolean = false,
+        @RequestBody request: ExcelRequest,
+        response: HttpServletResponse
+    ) {
+        // Initialize metrics
+        var startCpuTime: Long = 0
+        var endCpuTime: Long = 0
+        var startMemory: Long = 0
+        var endMemory: Long = 0
+
+        // Get MXBeans for CPU and memory
+        val osBean = ManagementFactory.getOperatingSystemMXBean()
+        val runtime = Runtime.getRuntime()
+
+        // Capture metrics before processing (if dryRun is enabled)
+        if (dryRun) {
+            startCpuTime = getCpuTime(osBean)
+            startMemory = runtime.totalMemory() - runtime.freeMemory()
+        }
+
+        // Generate Excel file
+        val workbook = generateExcelFile(request.template, request.data)
+
+        // Capture metrics after processing but before response (if dryRun is enabled)
+        if (dryRun) {
+            endCpuTime = getCpuTime(osBean)
+            endMemory = runtime.totalMemory() - runtime.freeMemory()
+        }
+
+        // Set response headers
+        response.contentType = "application/octet-stream"
+        response.setHeader("Content-Disposition", "attachment; filename=generated_excel.xlsx")
+        if (dryRun) {
+            response.setHeader("X-Start-Cpu-Time", startCpuTime.toString())
+            response.setHeader("X-End-Cpu-Time", endCpuTime.toString())
+            response.setHeader("X-Start-Memory", startMemory.toString())
+            response.setHeader("X-End-Memory", endMemory.toString())
+        }
+
+        // Write Excel bytes to response
+        workbook.use {
+            val byteArrayOutputStream = ByteArrayOutputStream()
+            it.write(byteArrayOutputStream)
+            val excelBytes = byteArrayOutputStream.toByteArray()
+            response.outputStream.write(excelBytes)
+            response.outputStream.flush()
+        }
+    }
+
+    // Helper function to get CPU time
+    private fun getCpuTime(osBean: OperatingSystemMXBean): Long {
+        return if (osBean is UnixOperatingSystemMXBean) {
+            osBean.processCpuTime
+        } else {
+            -1 // CPU time not available on this platform
+        }
+    }
+
+    // Placeholder for Excel generation logic
+    private fun generateExcelFile(base64Template: String, data: Map<String, Any>): Workbook {
+        // Decode base64 template
+        val templateBytes = Base64.getDecoder().decode(base64Template)
+        val workbook = XSSFWorkbook(java.io.ByteArrayInputStream(templateBytes))
+
+        // Apply data to workbook (implement your logic here)
+        // Example: workbook.getSheetAt(0).createRow(0).createCell(0).setCellValue(data["key"].toString())
+
+        return workbook
+    }
+}
+```
+
+### Explanation of Changes
+- **HttpServletResponse Usage**:
+  - The `HttpServletResponse` object is used to set the content type (`application/octet-stream`) and `Content-Disposition` header for file download.
+  - Custom headers (`X-Start-Cpu-Time`, `X-End-Cpu-Time`, `X-Start-Memory`, `X-End-Memory`) are added when `dryRun=true` using `response.setHeader`.
+  - The Excel file bytes are written directly to `response.outputStream`.
+- **Metrics Collection**:
+  - **CPU Time**: Captured using `UnixOperatingSystemMXBean.processCpuTime` (in nanoseconds) for Unix-like systems. Returns `-1` if unavailable (e.g., on Windows).
+  - **Memory**: Calculated as `Runtime.totalMemory() - Runtime.freeMemory()` (in bytes).
+- **Excel Generation**: The `generateExcelFile` function is a placeholder. Replace it with your actual logic to process the base64 template and data.
+- **Response Body**: Remains unchanged, streaming the Excel file bytes directly to the client.
+
+### Dependencies
+Ensure your `build.gradle.kts` includes:
+
+```kotlin
+dependencies {
+    implementation("org.apache.poi:poi:5.3.0")
+    implementation("org.apache.poi:poi-ooxml:5.3.0")
+    implementation("org.springframework.boot:spring-boot-starter-web")
+}
+```
+
+### Performance Testing
+To test the API and inspect the metrics in the response headers, use tools like **Apache JMeter**, **Postman**, or **curl**.
+
+#### Using JMeter
+1. **Create a Test Plan**:
+   - Add a **Thread Group** (e.g., 10 users, 10-second ramp-up).
+   - Add an **HTTP Request** sampler:
+     - **Method**: POST
+     - **URL**: `http://localhost:8080/api/generate-excel?dryRun=true`
+     - **Body**: JSON payload with `template` (base64-encoded Excel template) and `data`.
+   - Add a **View Results Tree** listener to inspect response headers.
+2. **Run the Test**: Check the headers for `X-Start-Cpu-Time`, `X-End-Cpu-Time`, `X-Start-Memory`, and `X-End-Memory`.
+
+#### Using curl
+```bash
+curl -X POST http://localhost:8080/api/generate-excel?dryRun=true \
+  -H "Content-Type: application/json" \
+  -d '{"template": "[Your Base64 Template]", "data": {"key": "value"}}' \
+  -o output.xlsx --dump-header headers.txt
+```
+
+- Check `headers.txt` for the metrics headers:
+  ```
+  HTTP/1.1 200 OK
+  Content-Type: application/octet-stream
+  Content-Disposition: attachment; filename=generated_excel.xlsx
+  X-Start-Cpu-Time: 123456789
+  X-End-Cpu-Time: 134567890
+  X-Start-Memory: 104857600
+  X-End-Memory: 209715200
+  ```
+
+- **CPU Usage**: `(134567890 - 123456789) / 1_000_000 ≈ 11.11 ms`
+- **Memory Usage**: `(209715200 - 104857600) / 1024 / 1024 ≈ 100 MB`
+
+### Notes and Limitations
+- **Header Size Limits**: HTTP headers typically have a size limit (8-64 KB depending on the server). The metrics values are small (numeric strings), so this is unlikely to be an issue.
+- **Platform Compatibility**: CPU time via `processCpuTime` is only available on Unix-like systems. For Windows, consider using libraries like **Sigar** or Micrometer for cross-platform metrics.
+- **Performance Overhead**: Metrics collection adds minimal overhead. Test to ensure it’s acceptable for your use case.
+- **Security**: Validate the base64 template to prevent issues like malformed files or XML-based vulnerabilities (e.g., XXE attacks).
+- **Testing**: Use realistic workloads in JMeter to simulate production scenarios and analyze metrics under load.
+- **Header Naming**: Ensure header names (`X-Start-Cpu-Time`, etc.) comply with your API’s naming conventions. Adjust if needed (e.g., `X-Cpu-Start-Time`).
+
+This implementation preserves your API’s behavior of writing the Excel file directly to `HttpServletResponse` while adding performance metrics in the headers for `dryRun` requests. If you need assistance with specific parts (e.g., JMeter setup, Excel generation logic, or alternative metrics), let me know!
