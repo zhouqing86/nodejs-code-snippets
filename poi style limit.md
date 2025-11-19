@@ -1,3 +1,6 @@
+When I use apache POI to generate excel file, it will remove all rows from worksheet and regenerate worksheets, there has an unreasonable issue like one worksheet row influence other worksheet font color.
+For instance, when row 2140 exist in one worksheet, some rows in other worksheet that set font color to white, backgroud as black, will always display font as black, can you list the probability of why this happen.
+
 Your observations match **exactly** the classic Apache POI + Excel style-limit corruption scenario, and the numbers you see prove it.
 
 ### Diagnosis from Your Data
